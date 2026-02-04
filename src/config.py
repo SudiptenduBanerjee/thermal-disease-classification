@@ -1,32 +1,27 @@
 import torch
 
 class Config:
-    # --- COMET.ML SETUP ---
-    # COMET_API_KEY = "YOUR_API_KEY_HERE" 
-    # PROJECT_NAME = "thermal-mobilenet-attention"
-    # WORKSPACE = None 
-
+    
     # --- DATA PATHS ---
-    # Pointing to your specific dataset structure
     DATA_ROOT = "./dataset/research_experiments/split_70_10_20" 
     TRAIN_DIR = f"{DATA_ROOT}/train"
     VAL_DIR = f"{DATA_ROOT}/val"
     TEST_DIR = f"{DATA_ROOT}/test"
     
     # --- MODEL CONFIG ---
-    MODEL_NAME = "MobileNetV2_Attention"
-    NUM_CLASSES = 15  # Based on your folder structure (Citrus, Guava, Mango, etc.)
+    MODEL_NAME = "SOTA_ConvNeXt_CBAM" # Changed for SOTA
+    NUM_CLASSES = 15
     IMAGE_SIZE = (224, 224)
     
     # --- HYPERPARAMETERS ---
-    BATCH_SIZE = 128  # High batch size for 4 GPUs
-    EPOCHS = 50       # As requested by your sir
-    LEARNING_RATE = 1e-4 
+    BATCH_SIZE = 64  # Adjusted for ConvNeXt memory usage on 4 GPUs
+    EPOCHS = 100     # SOTA requires more epochs with MixUp
+    LEARNING_RATE = 4e-5 
     LABEL_SMOOTHING = 0.1
+    MIXUP_ALPHA = 0.2 # Added for SOTA Regularization
     
     # --- LOGGING & SAVING ---
     MODEL_DIR = "./"
-    # Specific JSON filename
     HISTORY_JSON = f"training_history_{MODEL_NAME}.json" 
     BEST_MODEL_SAVE_PATH = f"{MODEL_NAME}_best.pth"
     

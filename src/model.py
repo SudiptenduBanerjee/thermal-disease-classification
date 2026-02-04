@@ -2,70 +2,52 @@ import torch
 import torch.nn as nn
 from torchvision import models
 
-class SelfAttention(nn.Module):
-    """
-    Self-Attention Block for Convolutional Networks.
-    Calculates the relationship between every pixel and every other pixel.
-    """
-    def __init__(self, in_dim):
-        super(SelfAttention, self).__init__()
-        # Pointwise convolutions to create Query, Key, and Value matrices
-        self.query_conv = nn.Conv2d(in_dim, in_dim // 8, kernel_size=1)
-        self.key_conv = nn.Conv2d(in_dim, in_dim // 8, kernel_size=1)
-        self.value_conv = nn.Conv2d(in_dim, in_dim, kernel_size=1)
-        
-        # Gamma controls how much we listen to the attention map. 
-        # Starts at 0, so the model learns to use it gradually.
-        self.gamma = nn.Parameter(torch.zeros(1))
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, x):
-        m_batchsize, C, width, height = x.size()
-        
-        # 1. Project Features
-        proj_query = self.query_conv(x).view(m_batchsize, -1, width * height).permute(0, 2, 1)
-        proj_key = self.key_conv(x).view(m_batchsize, -1, width * height)
-        
-        # 2. Calculate Energy (Query * Key)
-        energy = torch.bmm(proj_query, proj_key)
-        
-        # 3. Generate Attention Map
-        attention = self.softmax(energy)
-        
-        # 4. Apply to Values
-        proj_value = self.value_conv(x).view(m_batchsize, -1, width * height)
-        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
-        out = out.view(m_batchsize, C, width, height)
-        
-        # 5. Add back to original input (Residual connection)
-        out = self.gamma * out + x
-        return out
-
-class MobileNetV2_Attention(nn.Module):
-    def __init__(self, num_classes):
-        super(MobileNetV2_Attention, self).__init__()
-        
-        # 1. Load SOTA lightweight backbone
-        backbone = models.mobilenet_v2(weights='DEFAULT')
-        
-        # 2. Keep the feature extractor, discard the classifier
-        self.features = backbone.features 
-        
-        # 3. Add Self-Attention
-        # MobileNetV2 output channels are 1280
-        self.attention = SelfAttention(in_dim=1280)
-        
-        # 4. New Classifier Head
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(1280, num_classes),
+class CBAM(nn.Module):
+    """ Convolutional Block Attention Module (Spatial + Channel) """
+    def __init__(self, channels):
+        super(CBAM, self).__init__()
+        self.channel_attn = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, channels // 16, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channels // 16, channels, 1, bias=False),
+            nn.Sigmoid()
+        )
+        self.spatial_attn = nn.Sequential(
+            nn.Conv2d(2, 1, 7, padding=3, bias=False),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
-        x = self.features(x)    # Extract features
-        x = self.attention(x)   # Apply Attention (Focus on disease)
-        x = self.avgpool(x)     # Pool
-        x = torch.flatten(x, 1) # Flatten
-        x = self.classifier(x)  # Classify
+        x = x * self.channel_attn(x)
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        spatial = torch.cat([avg_out, max_out], dim=1)
+        x = x * self.spatial_attn(spatial)
+        return x
+
+class SOTA_Thermal_ConvNeXt(nn.Module):
+    def __init__(self, num_classes):
+        super(SOTA_Thermal_ConvNeXt, self).__init__()
+        # Load ConvNeXt-Tiny (SOTA backbone)
+        self.backbone = models.convnext_tiny(weights='IMAGENET1K_V1')
+        num_features = self.backbone.classifier[2].in_features
+        self.backbone.classifier = nn.Identity() 
+        
+        # Dual-Attention Block
+        self.attention = CBAM(num_features)
+        
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.LayerNorm(num_features),
+            nn.Dropout(0.4),
+            nn.Linear(num_features, num_classes)
+        )
+
+    def forward(self, x):
+        # Accessing the feature extractor for ConvNeXt
+        x = self.backbone.features(x)
+        x = self.attention(x)
+        x = self.head(x)
         return x
