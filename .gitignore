@@ -1,0 +1,22 @@
+# Ignore everything by default
+/*
+
+# Allow (un-ignore) the src folder and its contents
+!/src/
+
+# Allow .json files anywhere (like your training history)
+!/*.json
+
+# Keep the .gitignore itself tracked
+!.gitignore
+
+# Explicitly ignore everything else you mentioned
+/src/__init__.py
+/src/__pycache__/
+/data/
+/.vscode/
+/dataset/
+/.comet.config
+*.png
+*.txt
+*.pth
