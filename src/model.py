@@ -1,49 +1,71 @@
+import torch
 import torch.nn as nn
 from torchvision import models
 
-# --- NEW ATTENTION BLOCK (To replace the simple GAP) ---
-class SEAttentionBlock(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SEAttentionBlock, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1) # Global Average Pool equivalent
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
+class SelfAttention(nn.Module):
+    """
+    Self-Attention Block for Convolutional Networks.
+    Calculates the relationship between every pixel and every other pixel.
+    """
+    def __init__(self, in_dim):
+        super(SelfAttention, self).__init__()
+        # Pointwise convolutions to create Query, Key, and Value matrices
+        self.query_conv = nn.Conv2d(in_dim, in_dim // 8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_dim, in_dim // 8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_dim, in_dim, kernel_size=1)
+        
+        # Gamma controls how much we listen to the attention map. 
+        # Starts at 0, so the model learns to use it gradually.
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
+        m_batchsize, C, width, height = x.size()
+        
+        # 1. Project Features
+        proj_query = self.query_conv(x).view(m_batchsize, -1, width * height).permute(0, 2, 1)
+        proj_key = self.key_conv(x).view(m_batchsize, -1, width * height)
+        
+        # 2. Calculate Energy (Query * Key)
+        energy = torch.bmm(proj_query, proj_key)
+        
+        # 3. Generate Attention Map
+        attention = self.softmax(energy)
+        
+        # 4. Apply to Values
+        proj_value = self.value_conv(x).view(m_batchsize, -1, width * height)
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = out.view(m_batchsize, C, width, height)
+        
+        # 5. Add back to original input (Residual connection)
+        out = self.gamma * out + x
+        return out
 
-class SOTA_ThermalModel(nn.Module):
+class MobileNetV2_Attention(nn.Module):
     def __init__(self, num_classes):
-        super(SOTA_ThermalModel, self).__init__()
+        super(MobileNetV2_Attention, self).__init__()
         
-        # 1. New SOTA Backbone: ConvNeXt-Tiny
-        self.backbone = models.convnext_tiny(weights='IMAGENET1K_V1')
-        num_features = self.backbone.classifier[2].in_features # Features are 768
+        # 1. Load SOTA lightweight backbone
+        backbone = models.mobilenet_v2(weights='DEFAULT')
         
-        # Remove the default classifier head
-        self.backbone.classifier = nn.Identity() 
+        # 2. Keep the feature extractor, discard the classifier
+        self.features = backbone.features 
         
-        # 2. SOTA Head: Attention + New Classifier
-        self.attention = SEAttentionBlock(num_features) # Focus on important features!
+        # 3. Add Self-Attention
+        # MobileNetV2 output channels are 1280
+        self.attention = SelfAttention(in_dim=1280)
         
-        self.head = nn.Sequential(
-            nn.Flatten(),
-            nn.Dropout(0.3), # Slightly more aggressive dropout for small data
-            nn.Linear(num_features, num_classes)
+        # 4. New Classifier Head
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.2),
+            nn.Linear(1280, num_classes),
         )
 
     def forward(self, x):
-        features = self.backbone(x)
-        
-        # Apply Attention BEFORE the final linear layer
-        attended_features = self.attention(features)
-        
-        logits = self.head(attended_features)
-        return logits
+        x = self.features(x)    # Extract features
+        x = self.attention(x)   # Apply Attention (Focus on disease)
+        x = self.avgpool(x)     # Pool
+        x = torch.flatten(x, 1) # Flatten
+        x = self.classifier(x)  # Classify
+        return x

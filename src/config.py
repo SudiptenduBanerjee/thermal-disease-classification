@@ -1,35 +1,35 @@
 import torch
 
 class Config:
-    # Comet.ml Setup (Remember to uncomment and fill this in!)
+    # --- COMET.ML SETUP ---
     # COMET_API_KEY = "YOUR_API_KEY_HERE" 
-    # PROJECT_NAME = "thermal-sota-upgrade"
+    # PROJECT_NAME = "thermal-mobilenet-attention"
     # WORKSPACE = None 
 
-    # Explicit Dataset Paths (Assuming your 15-class structure)
+    # --- DATA PATHS ---
+    # Pointing to your specific dataset structure
     DATA_ROOT = "./dataset/research_experiments/split_70_10_20" 
     TRAIN_DIR = f"{DATA_ROOT}/train"
     VAL_DIR = f"{DATA_ROOT}/val"
     TEST_DIR = f"{DATA_ROOT}/test"
     
-    # Model Configuration
-    NUM_CLASSES = 15  # Confirmed for your 15-class dataset
+    # --- MODEL CONFIG ---
+    MODEL_NAME = "MobileNetV2_Attention"
+    NUM_CLASSES = 15  # Based on your folder structure (Citrus, Guava, Mango, etc.)
     IMAGE_SIZE = (224, 224)
     
-    # Training Hyperparameters - TWEAKED FOR SOTA
-    BATCH_SIZE = 128 
-    EPOCHS = 30 
-    LEARNING_RATE = 5e-5 # Lower LR for fine-tuning the strong backbone
-    
-    # NEW: Label Smoothing for better generalization
+    # --- HYPERPARAMETERS ---
+    BATCH_SIZE = 128  # High batch size for 4 GPUs
+    EPOCHS = 50       # As requested by your sir
+    LEARNING_RATE = 1e-4 
     LABEL_SMOOTHING = 0.1
-    OPTIMIZER_TYPE = 'AdamW' # Using AdamW for better regularization
     
-    # Logs and Saves
-    MODEL_DIR = "./" # Directory to save history/models (root of the project)
-    HISTORY_JSON = "training_history_sota.json"
-    BEST_MODEL_SAVE_PATH = "sota_best_model.pth"
+    # --- LOGGING & SAVING ---
+    MODEL_DIR = "./"
+    # Specific JSON filename
+    HISTORY_JSON = f"training_history_{MODEL_NAME}.json" 
+    BEST_MODEL_SAVE_PATH = f"{MODEL_NAME}_best.pth"
     
-    # Hardware
+    # --- HARDWARE ---
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     NUM_GPUS = torch.cuda.device_count()
